@@ -1,0 +1,28 @@
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Virtual environment
+.venv/
+
+# Environment variables
+.env
+.env.*
+
+# Keep examples
+!.env.example
+
+# OS / editor
+.DS_Store
+.vscode/
+.idea/
+
+# Docker / local data
+postgres_data/
+
+# Logs
+*.log
