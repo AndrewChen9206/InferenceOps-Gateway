@@ -15,6 +15,7 @@ htmlcov/
 
 # Keep examples
 !.env.example
+!.env.test.example
 
 # OS / editor
 .DS_Store

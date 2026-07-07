@@ -1,3 +1,4 @@
+import os
 from functools import cached_property
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -36,4 +37,4 @@ class Settings(BaseSettings):
         return f"redis://{self.redis_host}:{self.redis_port}/0"
 
 
-settings = Settings()
+settings = Settings(_env_file=os.getenv("ENV_FILE", ".env"))
