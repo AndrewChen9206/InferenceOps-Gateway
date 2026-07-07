@@ -1,9 +1,9 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from redis.asyncio import Redis
 from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.config import settings
-from app.db.session import AsyncSessionLocal
+from app.dependencies import get_db_session, get_redis_client
 
 
 router = APIRouter()
@@ -15,13 +15,12 @@ async def healthz() -> dict[str, str]:
 
 
 @router.get("/readyz")
-async def readyz() -> dict[str, str]:
-    async with AsyncSessionLocal() as session:
-        await session.execute(text("SELECT 1"))
-
-    redis = Redis.from_url(settings.redis_url, decode_responses=True)
+async def readyz(
+    session: AsyncSession = Depends(get_db_session),
+    redis: Redis = Depends(get_redis_client),
+) -> dict[str, str]:
+    await session.execute(text("SELECT 1"))
     await redis.ping()
-    await redis.aclose()
 
     return {
         "status": "ready",

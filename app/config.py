@@ -22,6 +22,12 @@ class Settings(BaseSettings):
     default_daily_budget_usd: float = 0.10
     default_requests_per_minute: int = 60
 
+    default_cache_ttl_seconds: int = 3600
+    document_cache_ttl_seconds: int = 86400
+    cache_key_version: str = "v1"
+    prompt_template_version: str = "v1"
+    model_version: str = "v1"
+
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
 
     @cached_property
