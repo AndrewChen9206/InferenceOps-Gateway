@@ -30,13 +30,13 @@
 
 ### Cache
 
-- [ ] Design exact cache key format
-- [ ] Add cache key version
-- [ ] Add prompt normalization tests
-- [ ] Add Redis cache lookup
-- [ ] Add Redis cache write
-- [ ] Add TTL
-- [ ] Log cache hit/miss
+- [x] Design exact cache key format
+- [x] Add cache key version
+- [x] Add Redis cache lookup
+- [x] Add Redis cache write
+- [x] Add TTL
+- [x] Log cache hit/miss
+- [x] Add cache API tests
 
 ### Cost Control
 
@@ -47,7 +47,7 @@
 
 ### Rate Limiting
 
-- [ ] Add Redis fixed-window counter
-- [ ] Add rate limit error response
-- [ ] Add rate limit tests
-- [ ] Document fixed-window tradeoffs
+- [x] Add Redis fixed-window counter
+- [x] Add rate limit error response
+- [x] Add rate limit tests
+- [x] Document fixed-window tradeoffs

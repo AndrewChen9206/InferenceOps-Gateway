@@ -12,6 +12,8 @@ from app.core.cache import (
 )
 from app.core.cost import estimate_cost_usd, estimate_input_tokens
 from app.core.normalization import hash_text, normalize_prompt
+from app.core.errors import RateLimitExceededError
+from app.core.rate_limit import check_rate_limit
 from app.db.repository import create_request_log, get_model_price, get_user_by_key
 from app.providers.mock_provider import MockProvider
 from app.schemas.inference import InferRequest, InferResponse
@@ -26,6 +28,18 @@ async def run_inference(
     user = await get_user_by_key(session, request.user_id)
     if user is None:
         raise ValueError(f"Unknown user_id: {request.user_id}")
+
+    allowed = await check_rate_limit(
+        redis,
+        user_id=request.user_id,
+        limit=user.requests_per_minute,
+    )
+
+    if not allowed:
+        raise RateLimitExceededError(
+            user_id=request.user_id,
+            limit=user.requests_per_minute,
+        )
 
     provider = MockProvider()
     selected_model = provider.model_name

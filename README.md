@@ -165,6 +165,63 @@ uv run ruff format
 uv run ruff check
 ```
 
+## v0.2 Cache Flow
+
+```text
+Client
+  |
+  v
+POST /v1/infer
+  |
+  v
+Inference Service
+  |
+  v
+Build exact cache key
+  |
+  +--> Cache hit?
+       |
+       +--> Yes
+       |     |
+       |     v
+       |  Redis cached response
+       |     |
+       |     v
+       |  PostgreSQL log
+       |     |
+       |     v
+       |  Response
+       |
+       +--> No
+             |
+             v
+        Mock Provider
+             |
+             v
+        Redis write
+             |
+             v
+        PostgreSQL log
+             |
+             v
+          Response
+```
+
+The cache key includes:
+
+- Task type
+- Selected model
+- Normalized prompt
+- Temperature
+- Max tokens
+- Cache key version
+- Prompt template version
+- Model version
+
+The raw prompt is **never** used directly as the Redis key.
+
+Instead, the cache key is serialized and hashed using **SHA-256** before being stored in Redis.
+
 ## Limitations
 
 v0.1 is intentionally small. It does not yet implement:
