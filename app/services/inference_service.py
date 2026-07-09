@@ -10,11 +10,20 @@ from app.core.cache import (
     get_cached_response,
     set_cached_response,
 )
-from app.core.cost import estimate_cost_usd, estimate_input_tokens
+from app.core.errors import BudgetExceededError, RateLimitExceededError
+from app.db.repository import (
+    create_request_log,
+    get_model_price,
+    get_user_by_key,
+    get_user_estimated_spend_today,
+)
+from app.core.cost import (
+    estimate_cost_usd,
+    estimate_input_tokens,
+    estimate_output_tokens,
+)
 from app.core.normalization import hash_text, normalize_prompt
-from app.core.errors import RateLimitExceededError
 from app.core.rate_limit import check_rate_limit
-from app.db.repository import create_request_log, get_model_price, get_user_by_key
 from app.providers.mock_provider import MockProvider
 from app.schemas.inference import InferRequest, InferResponse
 
@@ -49,6 +58,31 @@ async def run_inference(
         raise ValueError(f"Missing model price for model: {selected_model}")
 
     normalized_prompt = normalize_prompt(request.prompt)
+
+    estimated_input_tokens = estimate_input_tokens(normalized_prompt)
+    precheck_output_tokens = estimate_output_tokens(request.max_tokens)
+
+    estimated_precheck_cost = estimate_cost_usd(
+        input_tokens=estimated_input_tokens,
+        output_tokens=precheck_output_tokens,
+        input_cost_per_1k_tokens=Decimal(model_price.input_cost_per_1k_tokens),
+        output_cost_per_1k_tokens=Decimal(model_price.output_cost_per_1k_tokens),
+    )
+
+    current_spend = await get_user_estimated_spend_today(
+        session,
+        user_id=user.id,
+    )
+
+    projected_spend = current_spend + estimated_precheck_cost
+
+    if projected_spend > Decimal(user.daily_budget_usd):
+        raise BudgetExceededError(
+            user_id=request.user_id,
+            budget_usd=str(user.daily_budget_usd),
+            projected_spend_usd=str(projected_spend),
+        )
+
     prompt_hash = hash_text(normalized_prompt)
 
     raw_cache_key = build_raw_cache_key(

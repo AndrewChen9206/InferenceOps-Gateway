@@ -51,3 +51,21 @@
 - [x] Add rate limit error response
 - [x] Add rate limit tests
 - [x] Document fixed-window tradeoffs
+
+## v0.2 Cache + Control Layer
+
+Status: Complete
+
+Completed tasks:
+
+- [x] Containerize FastAPI app
+- [x] Separate Docker `.env` and local test `.env.test`
+- [x] Add exact Redis cache
+- [x] Add versioned cache key
+- [x] Add cache TTL
+- [x] Add cache hit/miss logging
+- [x] Add fixed-window rate limiting
+- [x] Add daily budget enforcement
+- [x] Add tests for cache, rate limiting, and budget
+- [x] Document rate limiting tradeoffs
+- [x] Document design tradeoffs

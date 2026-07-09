@@ -5,7 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.dependencies import get_db_session, get_redis_client
 from app.schemas.inference import InferRequest, InferResponse
 from app.services.inference_service import run_inference
-from app.core.errors import RateLimitExceededError
+from app.core.errors import BudgetExceededError, RateLimitExceededError
 
 
 router = APIRouter(prefix="/v1", tags=["inference"])
@@ -22,6 +22,11 @@ async def infer(
     except RateLimitExceededError as exc:
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=str(exc),
+        ) from exc
+    except BudgetExceededError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_402_PAYMENT_REQUIRED,
             detail=str(exc),
         ) from exc
     except ValueError as exc:
