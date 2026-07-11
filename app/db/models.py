@@ -2,13 +2,34 @@ import uuid
 from datetime import datetime
 from decimal import Decimal
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, Numeric, String, Text
+from app.core.time import utc_now
+
+from sqlalchemy import (
+    Boolean,
+    DateTime,
+    ForeignKey,
+    Index,
+    Integer,
+    MetaData,
+    Numeric,
+    String,
+    Text,
+)
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 
+NAMING_CONVENTION = {
+    "ix": "ix_%(column_0_label)s",
+    "uq": "uq_%(table_name)s_%(column_0_name)s",
+    "ck": "ck_%(table_name)s_%(constraint_name)s",
+    "fk": "fk_%(table_name)s_%(column_0_name)s_%(referred_table_name)s",
+    "pk": "pk_%(table_name)s",
+}
+
+
 class Base(DeclarativeBase):
-    pass
+    metadata = MetaData(naming_convention=NAMING_CONVENTION)
 
 
 class User(Base):
@@ -25,7 +46,7 @@ class User(Base):
         Numeric(10, 6), default=Decimal("0.10")
     )
     requests_per_minute: Mapped[int] = mapped_column(Integer, default=60)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
 
     requests: Mapped[list["RequestLog"]] = relationship(back_populates="user")
 
@@ -46,11 +67,32 @@ class ModelPrice(Base):
         Numeric(10, 6), nullable=False
     )
     provider_name: Mapped[str] = mapped_column(String(100), default="local-mock")
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
 
 
 class RequestLog(Base):
     __tablename__ = "requests"
+
+    __table_args__ = (
+        Index(
+            "ix_requests_user_id_created_at",
+            "user_id",
+            "created_at",
+        ),
+        Index(
+            "ix_requests_policy_created_at",
+            "policy",
+            "created_at",
+        ),
+        Index(
+            "ix_requests_cache_hit",
+            "cache_hit",
+        ),
+        Index(
+            "ix_requests_task_type",
+            "task_type",
+        ),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
@@ -79,6 +121,6 @@ class RequestLog(Base):
     error_type: Mapped[str | None] = mapped_column(String(100), nullable=True)
 
     output_preview: Mapped[str | None] = mapped_column(Text, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
 
     user: Mapped[User] = relationship(back_populates="requests")

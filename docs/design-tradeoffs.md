@@ -73,3 +73,33 @@ A frontend would not help demonstrate the core technical ideas: caching, rate li
 ## Why No Paid APIs
 
 The project intentionally avoids paid APIs to keep it reproducible, free, and safe to run by anyone cloning the repository.
+
+### Cache Hit Cost Semantics
+
+`estimated_cost_usd` represents the simulated provider cost incurred by the current gateway request.
+
+A cache miss that calls a mock provider records the estimated provider cost. A cache hit records zero provider cost because no provider call occurs.
+
+This allows daily budget calculations and future benchmarks to measure provider cost reduction from caching correctly.
+
+## Redis Persistence Strategy
+
+PostgreSQL is the system of record and uses a Docker named volume so that users, model prices, request logs, and migration state survive container recreation.
+
+Redis is intentionally treated as ephemeral infrastructure in v0.2 and does not use a persistent volume.
+
+The following Redis data may be lost when the Redis container is removed or recreated:
+
+- Exact-cache entries
+- Rate-limit counters
+- Temporary test keys
+
+This is acceptable because cache entries can be regenerated and rate-limit counters are short-lived control data.
+
+The consequence is that after a Redis restart:
+
+- The next repeated inference request becomes a cache miss.
+- Rate-limit counters restart from zero.
+- PostgreSQL request history remains unchanged.
+
+This is a deliberate local-first design decision, not accidental data loss.

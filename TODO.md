@@ -56,16 +56,17 @@
 
 Status: Complete
 
-Completed tasks:
-
-- [x] Containerize FastAPI app
-- [x] Separate Docker `.env` and local test `.env.test`
+- [x] Containerize FastAPI
+- [x] Add Alembic schema migrations
+- [x] Add Docker Compose migration service
 - [x] Add exact Redis cache
-- [x] Add versioned cache key
-- [x] Add cache TTL
+- [x] Add versioned cache keys
+- [x] Add TTL
 - [x] Add cache hit/miss logging
+- [x] Record zero provider cost for cache hits
 - [x] Add fixed-window rate limiting
 - [x] Add daily budget enforcement
-- [x] Add tests for cache, rate limiting, and budget
-- [x] Document rate limiting tradeoffs
-- [x] Document design tradeoffs
+- [x] Add structured domain errors
+- [x] Add best-effort cache write strategy
+- [x] Separate development and test infrastructure
+- [x] Add automated tests and design documentation

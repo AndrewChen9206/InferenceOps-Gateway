@@ -28,6 +28,13 @@ class InferRequest(BaseModel):
     cache: bool = True
 
 
+class CachedInferenceResult(BaseModel):
+    selected_model: str
+    output: str
+    estimated_input_tokens: int
+    estimated_output_tokens: int
+
+
 class InferResponse(BaseModel):
     request_id: str
     user_id: str

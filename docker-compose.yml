@@ -1,16 +1,31 @@
 services:
+  migrate:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: inferenceops-gateway:local
+    container_name: inferenceops-migrate
+    env_file:
+      - .env
+    command: ["uv", "run", "alembic", "upgrade", "head"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
   app:
     build:
       context: .
       dockerfile: Dockerfile
+    image: inferenceops-gateway:local
     container_name: inferenceops-app
     env_file:
       - .env
     ports:
       - "8000:8000"
     depends_on:
-      postgres:
-        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
       redis:
         condition: service_healthy
 
@@ -41,6 +56,40 @@ services:
       interval: 5s
       timeout: 5s
       retries: 5
+
+  postgres_test:
+    image: postgres:17
+    container_name: inferenceops-postgres-test
+    profiles:
+      - test
+    environment:
+      POSTGRES_DB: inferenceops_test
+      POSTGRES_USER: inferenceops
+      POSTGRES_PASSWORD: inferenceops
+    ports:
+      - "5433:5432"
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -U inferenceops -d inferenceops_test",
+        ]
+      interval: 2s
+      timeout: 5s
+      retries: 10
+
+  redis_test:
+    image: redis:8
+    container_name: inferenceops-redis-test
+    profiles:
+      - test
+    ports:
+      - "6380:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 5s
+      retries: 10
 
 volumes:
   postgres_data:

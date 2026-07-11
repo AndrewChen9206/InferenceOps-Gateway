@@ -1,9 +1,9 @@
 import json
-from typing import Any
 
 from redis.asyncio import Redis
 
 from app.core.normalization import hash_text
+from app.schemas.inference import CachedInferenceResult
 
 
 def build_raw_cache_key(
@@ -37,23 +37,27 @@ def build_cache_key(raw_cache_key: str) -> str:
     return f"cache:infer:{hash_text(raw_cache_key)}"
 
 
-async def get_cached_response(redis: Redis, cache_key: str) -> dict[str, Any] | None:
+async def get_cached_response(
+    redis: Redis,
+    cache_key: str,
+) -> CachedInferenceResult | None:
     cached_value = await redis.get(cache_key)
+
     if cached_value is None:
         return None
 
-    return json.loads(cached_value)
+    return CachedInferenceResult.model_validate_json(cached_value)
 
 
 async def set_cached_response(
     redis: Redis,
     *,
     cache_key: str,
-    response_data: dict[str, Any],
+    response_data: CachedInferenceResult,
     ttl_seconds: int,
 ) -> None:
     await redis.set(
         cache_key,
-        json.dumps(response_data),
+        response_data.model_dump_json(),
         ex=ttl_seconds,
     )

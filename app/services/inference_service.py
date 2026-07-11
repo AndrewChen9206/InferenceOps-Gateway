@@ -1,6 +1,8 @@
+import logging
 from decimal import Decimal
 
 from redis.asyncio import Redis
+from redis.exceptions import RedisError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
@@ -10,7 +12,12 @@ from app.core.cache import (
     get_cached_response,
     set_cached_response,
 )
-from app.core.errors import BudgetExceededError, RateLimitExceededError
+from app.core.errors import (
+    BudgetExceededError,
+    ModelPriceNotFoundError,
+    RateLimitExceededError,
+    UnknownUserError,
+)
 from app.db.repository import (
     create_request_log,
     get_model_price,
@@ -24,8 +31,16 @@ from app.core.cost import (
 )
 from app.core.normalization import hash_text, normalize_prompt
 from app.core.rate_limit import check_rate_limit
+from app.core.timing import elapsed_ms, start_timer
 from app.providers.mock_provider import MockProvider
-from app.schemas.inference import InferRequest, InferResponse
+from app.schemas.inference import (
+    CachedInferenceResult,
+    InferRequest,
+    InferResponse,
+)
+
+
+logger = logging.getLogger(__name__)
 
 
 async def run_inference(
@@ -34,9 +49,11 @@ async def run_inference(
     redis: Redis,
     request: InferRequest,
 ) -> InferResponse:
+    started_at = start_timer()
+
     user = await get_user_by_key(session, request.user_id)
     if user is None:
-        raise ValueError(f"Unknown user_id: {request.user_id}")
+        raise UnknownUserError(request.user_id)
 
     allowed = await check_rate_limit(
         redis,
@@ -53,11 +70,65 @@ async def run_inference(
     provider = MockProvider()
     selected_model = provider.model_name
 
+    normalized_prompt = normalize_prompt(request.prompt)
+    prompt_hash = hash_text(normalized_prompt)
+
+    raw_cache_key = build_raw_cache_key(
+        task_type=request.task_type.value,
+        selected_model=selected_model,
+        normalized_prompt=normalized_prompt,
+        temperature=request.temperature,
+        max_tokens=request.max_tokens,
+        cache_key_version=settings.cache_key_version,
+        prompt_template_version=settings.prompt_template_version,
+        model_version=settings.model_version,
+    )
+    cache_key = build_cache_key(raw_cache_key)
+
+    if request.cache:
+        cached_response = await get_cached_response(redis, cache_key)
+
+        if cached_response is not None:
+            cache_hit_cost = Decimal("0")
+            cache_hit_latency_ms = elapsed_ms(started_at)
+
+            request_log = await create_request_log(
+                session,
+                user_id=user.id,
+                task_type=request.task_type.value,
+                policy=request.policy.value,
+                selected_model=cached_response.selected_model,
+                prompt_hash=prompt_hash,
+                cache_key=cache_key,
+                cache_hit=True,
+                fallback_used=False,
+                primary_model=cached_response.selected_model,
+                estimated_input_tokens=cached_response.estimated_input_tokens,
+                estimated_output_tokens=cached_response.estimated_output_tokens,
+                estimated_cost_usd=cache_hit_cost,
+                latency_ms=cache_hit_latency_ms,
+                status="success",
+                output_preview=cached_response.output[:200],
+            )
+
+            return InferResponse(
+                request_id=str(request_log.id),
+                user_id=request.user_id,
+                task_type=request.task_type,
+                selected_model=cached_response.selected_model,
+                output=cached_response.output,
+                cache_hit=True,
+                fallback_used=False,
+                estimated_input_tokens=cached_response.estimated_input_tokens,
+                estimated_output_tokens=cached_response.estimated_output_tokens,
+                estimated_cost_usd=float(cache_hit_cost),
+                latency_ms=cache_hit_latency_ms,
+                policy=request.policy,
+            )
+
     model_price = await get_model_price(session, selected_model)
     if model_price is None:
-        raise ValueError(f"Missing model price for model: {selected_model}")
-
-    normalized_prompt = normalize_prompt(request.prompt)
+        raise ModelPriceNotFoundError(selected_model)
 
     estimated_input_tokens = estimate_input_tokens(normalized_prompt)
     precheck_output_tokens = estimate_output_tokens(request.max_tokens)
@@ -83,59 +154,6 @@ async def run_inference(
             projected_spend_usd=str(projected_spend),
         )
 
-    prompt_hash = hash_text(normalized_prompt)
-
-    raw_cache_key = build_raw_cache_key(
-        task_type=request.task_type.value,
-        selected_model=selected_model,
-        normalized_prompt=normalized_prompt,
-        temperature=request.temperature,
-        max_tokens=request.max_tokens,
-        cache_key_version=settings.cache_key_version,
-        prompt_template_version=settings.prompt_template_version,
-        model_version=settings.model_version,
-    )
-    cache_key = build_cache_key(raw_cache_key)
-
-    if request.cache:
-        cached_response = await get_cached_response(redis, cache_key)
-        if cached_response is not None:
-            request_log = await create_request_log(
-                session,
-                user_id=user.id,
-                task_type=request.task_type.value,
-                policy=request.policy.value,
-                selected_model=selected_model,
-                prompt_hash=prompt_hash,
-                cache_key=cache_key,
-                cache_hit=True,
-                fallback_used=False,
-                primary_model=selected_model,
-                estimated_input_tokens=cached_response["estimated_input_tokens"],
-                estimated_output_tokens=cached_response["estimated_output_tokens"],
-                estimated_cost_usd=Decimal(str(cached_response["estimated_cost_usd"])),
-                latency_ms=0,
-                status="success",
-                output_preview=cached_response["output"][:200],
-            )
-
-            return InferResponse(
-                request_id=str(request_log.id),
-                user_id=request.user_id,
-                task_type=request.task_type,
-                selected_model=selected_model,
-                output=cached_response["output"],
-                cache_hit=True,
-                fallback_used=False,
-                estimated_input_tokens=cached_response["estimated_input_tokens"],
-                estimated_output_tokens=cached_response["estimated_output_tokens"],
-                estimated_cost_usd=cached_response["estimated_cost_usd"],
-                latency_ms=0,
-                policy=request.policy,
-            )
-
-    estimated_input_tokens = estimate_input_tokens(normalized_prompt)
-
     provider_response = await provider.generate(
         task_type=request.task_type.value,
         prompt=normalized_prompt,
@@ -150,28 +168,7 @@ async def run_inference(
         output_cost_per_1k_tokens=Decimal(model_price.output_cost_per_1k_tokens),
     )
 
-    response = InferResponse(
-        request_id="pending",
-        user_id=request.user_id,
-        task_type=request.task_type,
-        selected_model=selected_model,
-        output=provider_response.output,
-        cache_hit=False,
-        fallback_used=False,
-        estimated_input_tokens=estimated_input_tokens,
-        estimated_output_tokens=provider_response.estimated_output_tokens,
-        estimated_cost_usd=float(estimated_cost),
-        latency_ms=provider_response.latency_ms,
-        policy=request.policy,
-    )
-
-    if request.cache:
-        await set_cached_response(
-            redis,
-            cache_key=cache_key,
-            response_data=response.model_dump(mode="json", exclude={"request_id"}),
-            ttl_seconds=settings.default_cache_ttl_seconds,
-        )
+    gateway_latency_ms = elapsed_ms(started_at)
 
     request_log = await create_request_log(
         session,
@@ -187,10 +184,50 @@ async def run_inference(
         estimated_input_tokens=estimated_input_tokens,
         estimated_output_tokens=provider_response.estimated_output_tokens,
         estimated_cost_usd=estimated_cost,
-        latency_ms=provider_response.latency_ms,
+        latency_ms=gateway_latency_ms,
         status="success",
         output_preview=provider_response.output[:200],
     )
 
-    response.request_id = str(request_log.id)
+    response = InferResponse(
+        request_id=str(request_log.id),
+        user_id=request.user_id,
+        task_type=request.task_type,
+        selected_model=selected_model,
+        output=provider_response.output,
+        cache_hit=False,
+        fallback_used=False,
+        estimated_input_tokens=estimated_input_tokens,
+        estimated_output_tokens=provider_response.estimated_output_tokens,
+        estimated_cost_usd=float(estimated_cost),
+        latency_ms=gateway_latency_ms,
+        policy=request.policy,
+    )
+
+    if request.cache:
+        cached_result = CachedInferenceResult(
+            selected_model=selected_model,
+            output=provider_response.output,
+            estimated_input_tokens=estimated_input_tokens,
+            estimated_output_tokens=provider_response.estimated_output_tokens,
+        )
+
+        try:
+            await set_cached_response(
+                redis,
+                cache_key=cache_key,
+                response_data=cached_result,
+                ttl_seconds=settings.default_cache_ttl_seconds,
+            )
+        except RedisError:
+            logger.warning(
+                "Failed to cache inference response",
+                extra={
+                    "request_id": str(request_log.id),
+                    "cache_key": cache_key,
+                    "selected_model": selected_model,
+                },
+                exc_info=True,
+            )
+
     return response

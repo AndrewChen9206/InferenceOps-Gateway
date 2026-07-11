@@ -27,3 +27,6 @@ postgres_data/
 
 # Logs
 *.log
+
+# Local database backups
+backups/

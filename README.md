@@ -73,20 +73,21 @@ Redis is available and checked by /readyz, but caching and rate limiting are pla
 uv sync
 ```
 
-### 2. Start local infrastructure
-
-```bash
-docker compose up -d
-docker compose ps
-```
-
-PostgreSQL and Redis should be healthy before starting the API.
-
-### 3. Configure environment
+### Start the complete stack
 
 ```bash
 cp .env.example .env
+docker compose up --build -d
+docker compose ps -a
 ```
+
+Docker Compose will:
+
+- Start PostgreSQL.
+- Wait until PostgreSQL is healthy.
+- Run `alembic upgrade head`.
+- Start Redis.
+- Start the FastAPI application after migrations succeed.
 
 For local development where FastAPI runs in WSL and PostgreSQL/Redis run in Docker, use:
 
@@ -152,18 +153,17 @@ Current v0.1 behavior:
 
 ## Testing
 
-Run:
+### Start isolated test infrastructure
 
 ```bash
-uv run pytest
+cp .env.test.example .env.test
+
+docker compose --profile test up -d postgres_test redis_test
+ENV_FILE=.env.test uv run alembic upgrade head
+ENV_FILE=.env.test uv run pytest
 ```
 
-Run linting / formatting:
-
-```bash
-uv run ruff format
-uv run ruff check
-```
+The test PostgreSQL database and Redis instance are isolated from the development environment.
 
 ## v0.2 Cache Flow
 
@@ -206,6 +206,39 @@ Build exact cache key
              v
           Response
 ```
+```text
+                  Docker Compose
+
+          ┌───────────────────────────┐
+          │                           │
+          ▼                           │
+     PostgreSQL ──health──> Migration Service
+          ▲                    │
+          │                    │ success
+          │                    ▼
+          │               FastAPI App
+          │                    │
+          │                    ▼
+          │             Inference Service
+          │              /             \
+          │             /               \
+          ▼            ▼                 ▼
+     Request Logs   Redis Cache     Mock Provider
+                    Rate Limiter
+```
+
+Request
+→ validate user
+→ rate-limit check
+→ build exact cache key
+→ cache lookup
+    → hit: cost = 0, write DB log, return
+    → miss: estimate cost
+→ budget precheck
+→ call provider
+→ write durable DB log
+→ best-effort Redis cache write
+→ return response
 
 The cache key includes:
 
@@ -248,3 +281,22 @@ These are planned for future phases.
 
 This is a production-inspired educational portfolio project. It does not replace Cloudflare AI Gateway, LiteLLM, Portkey, or other production systems. The goal is to understand and demonstrate the backend mechanisms behind such systems in a fully local and reproducible way.
 
+## Current Status: v0.2 Cache and Control Layer
+
+v0.2 is complete.
+
+Implemented features:
+
+- Fully containerized FastAPI, PostgreSQL, and Redis stack
+- Alembic-managed PostgreSQL schema
+- One-shot Docker Compose migration service
+- Exact Redis cache with versioned cache keys and TTL
+- Zero simulated provider cost for cache hits
+- Fixed-window per-user rate limiting
+- Daily simulated budget enforcement
+- PostgreSQL request logging
+- Structured error handling
+- Best-effort cache writes
+- Separate development and test databases
+- Separate development and test Redis instances
+- Automated tests for health, inference, cache, rate limiting, budget, timing, migration-compatible startup, and failure behavior

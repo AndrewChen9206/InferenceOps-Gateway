@@ -2,6 +2,18 @@ class GatewayError(Exception):
     pass
 
 
+class UnknownUserError(GatewayError):
+    def __init__(self, user_id: str) -> None:
+        self.user_id = user_id
+        super().__init__(f"Unknown user_id: {user_id}")
+
+
+class ModelPriceNotFoundError(GatewayError):
+    def __init__(self, model_name: str) -> None:
+        self.model_name = model_name
+        super().__init__(f"Missing model price for model: {model_name}")
+
+
 class RateLimitExceededError(GatewayError):
     def __init__(self, user_id: str, limit: int) -> None:
         self.user_id = user_id
