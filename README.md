@@ -227,6 +227,7 @@ Build exact cache key
                     Rate Limiter
 ```
 
+```text
 Request
 → validate user
 → rate-limit check
@@ -239,6 +240,7 @@ Request
 → write durable DB log
 → best-effort Redis cache write
 → return response
+```
 
 The cache key includes:
 
